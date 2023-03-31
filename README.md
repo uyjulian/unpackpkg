@@ -2,6 +2,10 @@
 
 Unpacks `.pkg` files from ED8 / Trails of Cold Steel series of games.
 
+## Modding help and resources
+
+See [Trails Research Group](https://github.com/Trails-Research-Group) for more resources to assist in modding the game.  
+
 ## Usage
 
 First, download and extract the [Win32 version](https://github.com/uyjulian/unpackpkg/releases/latest/download/unpackpkg-win32.zip).  
