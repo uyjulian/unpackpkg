@@ -4,7 +4,9 @@ Unpacks `.pkg` files from ED8 / Trails of Cold Steel series of games.
 
 ## Usage
 
-TODO: to be written later
+First, download and extract the [Win32 version](https://github.com/uyjulian/unpackpkg/releases/latest/download/unpackpkg-win32.zip).  
+Afterwards, drag and drop a single `.pkg` file onto the executable `unpackpkg.exe`.  
+`.pkg__` directory will be output in the same directory as `.pkg`.  
 
 ## Compatibility
 
