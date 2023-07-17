@@ -2,7 +2,7 @@
 # This script is intended to unpack "pkg" file from Trails of Cold Steel III/IV/Hajimari PC/Switch, but it also works on Trails of Cold Steel I/II/III/IV Vita/PS3/PS4, Hajimari no Kiseki, and Tokyo Xanadu.
 # 1st argument is .pkg path, 2nd argument is output directory
 
-# For Hajimari PC support, it requires the "zstandard" module to be installed.
+# For Hajimari CLE PC support, it requires the "zstandard" module to be installed.
 # This can be installed by:
 # /path/to/python3 -m pip install zstandard
 
