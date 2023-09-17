@@ -1,8 +1,8 @@
 
-# This script is intended to unpack "pkg" file from Trails of Cold Steel III/IV/Hajimari PC/Switch, but it also works on Trails of Cold Steel I/II/III/IV Vita/PS3/PS4, Hajimari no Kiseki, and Tokyo Xanadu.
+# This script is intended to unpack "pkg" file from Trails of Cold Steel I/II/III/IV Vita/PS3/PS4/Switch, Trails into Reverie, and Tokyo Xanadu.
 # 1st argument is .pkg path, 2nd argument is output directory
 
-# For Hajimari CLE PC support, it requires the "zstandard" module to be installed.
+# For Trails into Reverie CLE PC and Trails of Cold Steel III/IV/Trails into Reverie NISA Switch support, it requires the "zstandard" module to be installed.
 # This can be installed by:
 # /path/to/python3 -m pip install zstandard
 
@@ -152,13 +152,24 @@ with open(sys.argv[1], "rb") as f:
             f.seek(4, io.SEEK_CUR)
         if file_entry[3] & 4:
             output_data = uncompress_lz4(f, file_entry[2], file_entry[1])
-        elif file_entry[3] & 8:
+        elif (file_entry[3] & 8) or (file_entry[3] & 16): # 8 is used for CLE PC, 16 is used for NISA Switch (works also on NISA PC version)
             if "zstandard" in sys.modules:
                 output_data = uncompress_zstd(f, file_entry[2], file_entry[1])
             else:
                 print(("File %s could not be extracted because zstandard module is not installed") % (file_entry_name.decode("ASCII")))
         elif file_entry[3] & 1:
-            output_data = uncompress_nislzss(f, file_entry[2], file_entry[1])
+            # This flag is both used by nislzss and lz4. Probe to differentiate between them
+            is_lz4 = True
+            compressed_size = file_entry[1]
+            if compressed_size >= 8:
+                f.seek(4, io.SEEK_CUR) # decompressed size
+                cms = int.from_bytes(f.read(4), byteorder="little")
+                f.seek(-8, io.SEEK_CUR)
+                is_lz4 = (cms != compressed_size) and ((compressed_size - cms) != 4)
+            if is_lz4:
+                output_data = uncompress_lz4(f, file_entry[2], file_entry[1])
+            else:
+                output_data = uncompress_nislzss(f, file_entry[2], file_entry[1])
         else:
             output_data = f.read(file_entry[2])
         if output_data is not None:
