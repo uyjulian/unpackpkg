@@ -9,7 +9,6 @@
 import io
 import sys
 import struct
-import os
 
 try:
     import zstandard
@@ -128,7 +127,7 @@ def uncompress_zstd(src, decompressed_size, compressed_size):
     uncompressed = dctx.decompress(src.read(compressed_size), max_output_size=decompressed_size)
     return uncompressed
 
-def unpack_pkg(srcpath, open_r_callback, open_w_callback):
+def unpack_pkg(srcpath, open_r_callback, open_w_callback, filter_entry_callback=None, srccommonpkgpath=None):
     with open_r_callback(srcpath) as f:
         # Skip first four bytes
         f.seek(4, io.SEEK_CUR)
@@ -137,8 +136,26 @@ def unpack_pkg(srcpath, open_r_callback, open_w_callback):
         for i in range(total_file_entries):
             file_entry_name, file_entry_uncompressed_size, file_entry_compressed_size, file_entry_offset, file_entry_flags = struct.unpack("<64sIIII", f.read(64+4+4+4+4))
             package_file_entries[file_entry_name.rstrip(b"\x00")] = [file_entry_offset, file_entry_compressed_size, file_entry_uncompressed_size, file_entry_flags]
+        common_pkg_file_entries = []
         for file_entry_name in sorted(package_file_entries.keys()):
             file_entry = package_file_entries[file_entry_name]
+            if ((file_entry[3] & 1) != 0) and ((file_entry[3] & 8) != 0) and (file_entry[0] == 0) and (file_entry[1] == 0):
+                common_pkg_file_entries.append(file_entry_name)
+        if len(common_pkg_file_entries) > 0 and srccommonpkgpath != None:
+            def filter_cb(fn, fe):
+                if fn in common_pkg_file_entries:
+                    return False
+                return True
+            unpack_pkg(srcpath=srccommonpkgpath, open_r_callback=open_r_callback, open_w_callback=open_w_callback, filter_entry_callback=filter_cb)
+        for file_entry_name in sorted(package_file_entries.keys()):
+            file_entry = package_file_entries[file_entry_name]
+            if filter_entry_callback != None:
+                if filter_entry_callback(file_entry_name, file_entry):
+                    continue
+            if ((file_entry[3] & 1) != 0) and ((file_entry[3] & 8) != 0) and (file_entry[0] == 0) and (file_entry[1] == 0):
+                if srccommonpkgpath == None:
+                    print(("File %s references common.pkg, but it was not found") % (file_entry_name.decode("ASCII")))
+                continue
             f.seek(file_entry[0])
             output_data = None
             if file_entry[3] & 2:
@@ -173,6 +190,7 @@ def unpack_pkg(srcpath, open_r_callback, open_w_callback):
 def standalone_main():
     import argparse
     import textwrap
+    import os
 
     parser = argparse.ArgumentParser(
         description='Unpacks ".pkg" files from ED8 / Trails of Cold Steel series of games.',
@@ -182,7 +200,7 @@ def standalone_main():
         type=str,
         help="The input pkg file.")
     parser.add_argument("--output-path",
-        type=str, 
+        type=str,
         default="",
         help=textwrap.dedent('''\
             The path to the output directory.
@@ -190,21 +208,44 @@ def standalone_main():
             If the path name is empty, it will default to the input pathname with "__" appended to it.
         ''')
         )
+    parser.add_argument("--common-pkg-file",
+        type=str,
+        default="",
+        help=textwrap.dedent('''\
+            The path to common.pkg.
+            If the path name is empty, it will attempt to search for a file in the same directory as input_file.
+        ''')
+        )
     args = parser.parse_args()
+
+    input_file = os.path.realpath(args.input_file)
+    if not os.path.isfile(input_file):
+        raise Exception("Passed in path is not file")
 
     out_dir = args.output_path
     if out_dir == "":
-        out_dir = args.input_file + "__"
+        out_dir = input_file + "__"
     try:
         os.makedirs(name=out_dir)
     except FileExistsError as e:
         pass
 
+    common_pkg_file = args.common_pkg_file
+    if common_pkg_file == "":
+        common_pkg_file = None
+        input_file_basepath = os.path.dirname(input_file)
+        common_pkg_file_test = input_file_basepath + "/common.pkg"
+        if os.path.isfile(common_pkg_file_test):
+            common_pkg_file = common_pkg_file_test
+    else:
+        if not os.path.isfile(common_pkg_file):
+            raise Exception("Passed in path is not file")
+
     def open_r_callback(path):
         return open(path, "rb")
     def open_w_callback(path):
         return open(out_dir + "/" + path, "wb")
-    unpack_pkg(args.input_file, open_r_callback, open_w_callback)
+    unpack_pkg(srcpath=args.input_file, open_r_callback=open_r_callback, open_w_callback=open_w_callback, srccommonpkgpath=common_pkg_file)
 
 if __name__ == "__main__":
     standalone_main()
