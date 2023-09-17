@@ -1,4 +1,6 @@
 
+# SPDX-License-Identifier: MIT
+
 # This script is intended to unpack "pkg" file from Trails of Cold Steel I/II/III/IV Vita/PS3/PS4/Switch, Trails into Reverie, and Tokyo Xanadu.
 # Run the script with "--help" as the argument for descriptions of the options.
 
