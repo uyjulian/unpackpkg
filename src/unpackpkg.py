@@ -1,6 +1,6 @@
 
 # This script is intended to unpack "pkg" file from Trails of Cold Steel I/II/III/IV Vita/PS3/PS4/Switch, Trails into Reverie, and Tokyo Xanadu.
-# 1st argument is .pkg path, 2nd argument is output directory
+# Run the script with "--help" as the argument for descriptions of the options.
 
 # For Trails into Reverie CLE PC and Trails of Cold Steel III/IV/Trails into Reverie NISA Switch support, it requires the "zstandard" module to be installed.
 # This can be installed by:
@@ -128,50 +128,83 @@ def uncompress_zstd(src, decompressed_size, compressed_size):
     uncompressed = dctx.decompress(src.read(compressed_size), max_output_size=decompressed_size)
     return uncompressed
 
-with open(sys.argv[1], "rb") as f:
-    out_dir = sys.argv[1] + "__"
-    if len(sys.argv) > 2:
-        out_dir = sys.argv[2]
+def unpack_pkg(srcpath, open_r_callback, open_w_callback):
+    with open_r_callback(srcpath) as f:
+        # Skip first four bytes
+        f.seek(4, io.SEEK_CUR)
+        package_file_entries = {}
+        total_file_entries, = struct.unpack("<I", f.read(4))
+        for i in range(total_file_entries):
+            file_entry_name, file_entry_uncompressed_size, file_entry_compressed_size, file_entry_offset, file_entry_flags = struct.unpack("<64sIIII", f.read(64+4+4+4+4))
+            package_file_entries[file_entry_name.rstrip(b"\x00")] = [file_entry_offset, file_entry_compressed_size, file_entry_uncompressed_size, file_entry_flags]
+        for file_entry_name in sorted(package_file_entries.keys()):
+            file_entry = package_file_entries[file_entry_name]
+            f.seek(file_entry[0])
+            output_data = None
+            if file_entry[3] & 2:
+                # This is the crc32 of the file, but we don't handle this yet
+                f.seek(4, io.SEEK_CUR)
+            if file_entry[3] & 4:
+                output_data = uncompress_lz4(f, file_entry[2], file_entry[1])
+            elif (file_entry[3] & 8) or (file_entry[3] & 16): # 8 is used for CLE PC, 16 is used for NISA Switch (works also on NISA PC version)
+                if "zstandard" in sys.modules:
+                    output_data = uncompress_zstd(f, file_entry[2], file_entry[1])
+                else:
+                    print(("File %s could not be extracted because zstandard module is not installed") % (file_entry_name.decode("ASCII")))
+            elif file_entry[3] & 1:
+                # This flag is both used by nislzss and lz4. Probe to differentiate between them
+                is_lz4 = True
+                compressed_size = file_entry[1]
+                if compressed_size >= 8:
+                    f.seek(4, io.SEEK_CUR) # decompressed size
+                    cms = int.from_bytes(f.read(4), byteorder="little")
+                    f.seek(-8, io.SEEK_CUR)
+                    is_lz4 = (cms != compressed_size) and ((compressed_size - cms) != 4)
+                if is_lz4:
+                    output_data = uncompress_lz4(f, file_entry[2], file_entry[1])
+                else:
+                    output_data = uncompress_nislzss(f, file_entry[2], file_entry[1])
+            else:
+                output_data = f.read(file_entry[2])
+            if output_data is not None:
+                with open_w_callback(file_entry_name.decode("ASCII")) as wf:
+                    wf.write(output_data)
+
+def standalone_main():
+    import argparse
+    import textwrap
+
+    parser = argparse.ArgumentParser(
+        description='Unpacks ".pkg" files from ED8 / Trails of Cold Steel series of games.',
+        usage='Use "%(prog)s --help" for more information.',
+        formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("input_file",
+        type=str,
+        help="The input pkg file.")
+    parser.add_argument("--output-path",
+        type=str, 
+        default="",
+        help=textwrap.dedent('''\
+            The path to the output directory.
+            If it does not already exist, it will be created.
+            If the path name is empty, it will default to the input pathname with "__" appended to it.
+        ''')
+        )
+    args = parser.parse_args()
+
+    out_dir = args.output_path
+    if out_dir == "":
+        out_dir = args.input_file + "__"
     try:
         os.makedirs(name=out_dir)
     except FileExistsError as e:
         pass
-    # Skip first four bytes
-    f.seek(4, io.SEEK_CUR)
-    package_file_entries = {}
-    total_file_entries, = struct.unpack("<I", f.read(4))
-    for i in range(total_file_entries):
-        file_entry_name, file_entry_uncompressed_size, file_entry_compressed_size, file_entry_offset, file_entry_flags = struct.unpack("<64sIIII", f.read(64+4+4+4+4))
-        package_file_entries[file_entry_name.rstrip(b"\x00")] = [file_entry_offset, file_entry_compressed_size, file_entry_uncompressed_size, file_entry_flags]
-    for file_entry_name in sorted(package_file_entries.keys()):
-        file_entry = package_file_entries[file_entry_name]
-        f.seek(file_entry[0])
-        output_data = None
-        if file_entry[3] & 2:
-            # This is the crc32 of the file, but we don't handle this yet
-            f.seek(4, io.SEEK_CUR)
-        if file_entry[3] & 4:
-            output_data = uncompress_lz4(f, file_entry[2], file_entry[1])
-        elif (file_entry[3] & 8) or (file_entry[3] & 16): # 8 is used for CLE PC, 16 is used for NISA Switch (works also on NISA PC version)
-            if "zstandard" in sys.modules:
-                output_data = uncompress_zstd(f, file_entry[2], file_entry[1])
-            else:
-                print(("File %s could not be extracted because zstandard module is not installed") % (file_entry_name.decode("ASCII")))
-        elif file_entry[3] & 1:
-            # This flag is both used by nislzss and lz4. Probe to differentiate between them
-            is_lz4 = True
-            compressed_size = file_entry[1]
-            if compressed_size >= 8:
-                f.seek(4, io.SEEK_CUR) # decompressed size
-                cms = int.from_bytes(f.read(4), byteorder="little")
-                f.seek(-8, io.SEEK_CUR)
-                is_lz4 = (cms != compressed_size) and ((compressed_size - cms) != 4)
-            if is_lz4:
-                output_data = uncompress_lz4(f, file_entry[2], file_entry[1])
-            else:
-                output_data = uncompress_nislzss(f, file_entry[2], file_entry[1])
-        else:
-            output_data = f.read(file_entry[2])
-        if output_data is not None:
-            with open(out_dir + "/" + file_entry_name.decode("ASCII"), "wb") as wf:
-                wf.write(output_data)
+
+    def open_r_callback(path):
+        return open(path, "rb")
+    def open_w_callback(path):
+        return open(out_dir + "/" + path, "wb")
+    unpack_pkg(args.input_file, open_r_callback, open_w_callback)
+
+if __name__ == "__main__":
+    standalone_main()
