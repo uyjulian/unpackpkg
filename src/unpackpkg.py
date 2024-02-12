@@ -22,7 +22,7 @@ def uncompress_nislzss(src, decompressed_size, compressed_size):
     if des != decompressed_size:
         des = des if (des > decompressed_size) else decompressed_size
     cms = int.from_bytes(src.read(4), byteorder="little")
-    if (cms != compressed_size) and ((compressed_size - cms) != 4):
+    if (cms != compressed_size) and ((compressed_size - cms) != 4) and not (decompressed_size == 451019 and compressed_size == 176128 and cms == 176796):
         raise Exception("compression size in header and stream don't match")
     num3 = int.from_bytes(src.read(4), byteorder="little")
     fin = src.tell() + cms - 13
@@ -173,12 +173,13 @@ def unpack_pkg(srcpath, open_r_callback, open_w_callback, filter_entry_callback=
             elif file_entry[3] & 1:
                 # This flag is both used by nislzss and lz4. Probe to differentiate between them
                 is_lz4 = True
+                decompressed_size = file_entry[2]
                 compressed_size = file_entry[1]
                 if compressed_size >= 8:
                     f.seek(4, io.SEEK_CUR) # decompressed size
                     cms = int.from_bytes(f.read(4), byteorder="little")
                     f.seek(-8, io.SEEK_CUR)
-                    is_lz4 = (cms != compressed_size) and ((compressed_size - cms) != 4)
+                    is_lz4 = (cms != compressed_size) and ((compressed_size - cms) != 4) and not (decompressed_size == 451019 and compressed_size == 176128 and cms == 176796)
                 if is_lz4:
                     output_data = uncompress_lz4(f, file_entry[2], file_entry[1])
                 else:
