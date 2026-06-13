@@ -12,11 +12,6 @@ import io
 import sys
 import struct
 
-try:
-    import zstandard
-except:
-    pass
-
 def uncompress_nislzss(src, decompressed_size, compressed_size):
     des = int.from_bytes(src.read(4), byteorder="little")
     if des != decompressed_size:
@@ -125,9 +120,12 @@ def uncompress_lz4(src, decompressed_size, compressed_size):
     return dst
 
 def uncompress_zstd(src, decompressed_size, compressed_size):
-    dctx = zstandard.ZstdDecompressor()
-    uncompressed = dctx.decompress(src.read(compressed_size), max_output_size=decompressed_size)
-    return uncompressed
+    try:
+        from compression import zstd
+        return zstd.ZstdDecompressor().decompress(src.read(compressed_size), max_length=decompressed_size)
+    except ImportError:
+        import zstandard
+        return zstandard.ZstdDecompressor().decompress(src.read(compressed_size), max_output_size=decompressed_size)
 
 def unpack_pkg(srcpath, open_r_callback, open_w_callback, filter_entry_callback=None, srccommonpkgpath=None):
     with open_r_callback(srcpath) as f:
@@ -166,9 +164,9 @@ def unpack_pkg(srcpath, open_r_callback, open_w_callback, filter_entry_callback=
             if file_entry[3] & 4:
                 output_data = uncompress_lz4(f, file_entry[2], file_entry[1])
             elif (file_entry[3] & 8) or (file_entry[3] & 16): # 8 is used for CLE PC, 16 is used for NISA Switch (works also on NISA PC version)
-                if "zstandard" in sys.modules:
+                try:
                     output_data = uncompress_zstd(f, file_entry[2], file_entry[1])
-                else:
+                except ImportError:
                     print(("File %s could not be extracted because zstandard module is not installed") % (file_entry_name.decode("ASCII")))
             elif file_entry[3] & 1:
                 # This flag is both used by nislzss and lz4. Probe to differentiate between them
